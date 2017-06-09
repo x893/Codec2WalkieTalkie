@@ -1,0 +1,3 @@
+[submodule "codec2"]
+	path = codec2
+	url = ../codec2.git
