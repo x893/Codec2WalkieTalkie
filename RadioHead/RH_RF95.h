@@ -37,10 +37,10 @@
 #endif
 
 // The crystal oscillator frequency of the module
-#define RH_RF95_FXOSC 32000000.0
+#define RH_RF95_FXOSC 32000000.0f
 
 // The Frequency Synthesizer step = RH_RF95_FXOSC / 2^^19
-#define RH_RF95_FSTEP  (RH_RF95_FXOSC / 524288)
+#define RH_RF95_FSTEP  (RH_RF95_FXOSC / 524288.0f)
 
 
 // Register names (LoRa Mode, from table 85)
@@ -554,12 +554,12 @@ public:
     /// ModemConfigChoice suit your need setModemRegisters() writes the
     /// register values from this structure to the appropriate registers
     /// to set the desired spreading factor, coding rate and bandwidth
-    typedef struct
-    {
-	uint8_t    reg_1d;   ///< Value for register RH_RF95_REG_1D_MODEM_CONFIG1
-	uint8_t    reg_1e;   ///< Value for register RH_RF95_REG_1E_MODEM_CONFIG2
-	uint8_t    reg_26;   ///< Value for register RH_RF95_REG_26_MODEM_CONFIG3
-    } ModemConfig;
+	typedef struct
+	{
+		uint8_t    reg_1d;	///< Value for register RH_RF95_REG_1D_MODEM_CONFIG1
+		uint8_t    reg_1e;	///< Value for register RH_RF95_REG_1E_MODEM_CONFIG2
+		uint8_t    reg_26;	///< Value for register RH_RF95_REG_26_MODEM_CONFIG3
+	} ModemConfig;
   
     /// Choices for setModemConfig() for a selected subset of common
     /// data rates. If you need another configuration,
@@ -574,13 +574,13 @@ public:
     /// Caution: for some slow rates nad with ReliableDatagrams youi may need to increase the reply timeout 
     /// with manager.setTimeout() to
     /// deal with the long transmission times.
-    typedef enum
-    {
-	Bw125Cr45Sf128 = 0,	   ///< Bw = 125 kHz, Cr = 4/5, Sf = 128chips/symbol, CRC on. Default medium range
-	Bw500Cr45Sf128,	           ///< Bw = 500 kHz, Cr = 4/5, Sf = 128chips/symbol, CRC on. Fast+short range
-	Bw31_25Cr48Sf512,	   ///< Bw = 31.25 kHz, Cr = 4/8, Sf = 512chips/symbol, CRC on. Slow+long range
-	Bw125Cr48Sf4096,           ///< Bw = 125 kHz, Cr = 4/8, Sf = 4096chips/symbol, CRC on. Slow+long range
-    } ModemConfigChoice;
+	typedef enum
+	{
+		Bw125Cr45Sf128 = 0,	///< Bw = 125 kHz, Cr = 4/5, Sf = 128chips/symbol, CRC on. Default medium range
+		Bw500Cr45Sf128,		///< Bw = 500 kHz, Cr = 4/5, Sf = 128chips/symbol, CRC on. Fast+short range
+		Bw31_25Cr48Sf512,	///< Bw = 31.25 kHz, Cr = 4/8, Sf = 512chips/symbol, CRC on. Slow+long range
+		Bw125Cr48Sf4096,	///< Bw = 125 kHz, Cr = 4/8, Sf = 4096chips/symbol, CRC on. Slow+long range
+	} ModemConfigChoice;
 
     /// Constructor. You can have multiple instances, but each instance must have its own
     /// interrupt and slave select pin. After constructing, you must call init() to initialise the interface

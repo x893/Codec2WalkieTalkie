@@ -34,83 +34,83 @@ RH_RF95::RH_RF95(uint8_t slaveSelectPin, uint8_t interruptPin, RHGenericSPI& spi
 
 bool RH_RF95::init()
 {
-    if (!RHSPIDriver::init())
-	return false;
+	if (!RHSPIDriver::init())
+		return false;
 
-    // Determine the interrupt number that corresponds to the interruptPin
-    int interruptNumber = digitalPinToInterrupt(_interruptPin);
-    if (interruptNumber == NOT_AN_INTERRUPT)
-	return false;
+	// Determine the interrupt number that corresponds to the interruptPin
+	int interruptNumber = digitalPinToInterrupt(_interruptPin);
+	if (interruptNumber == NOT_AN_INTERRUPT)
+		return false;
 #ifdef RH_ATTACHINTERRUPT_TAKES_PIN_NUMBER
-    interruptNumber = _interruptPin;
+	interruptNumber = _interruptPin;
 #endif
 
-    // No way to check the device type :-(
-    
-    // Set sleep mode, so we can also set LORA mode:
-    spiWrite(RH_RF95_REG_01_OP_MODE, RH_RF95_MODE_SLEEP | RH_RF95_LONG_RANGE_MODE);
-    delay(10); // Wait for sleep mode to take over from say, CAD
-    // Check we are in sleep mode, with LORA set
-    if (spiRead(RH_RF95_REG_01_OP_MODE) != (RH_RF95_MODE_SLEEP | RH_RF95_LONG_RANGE_MODE))
-    {
-//	Serial.println(spiRead(RH_RF95_REG_01_OP_MODE), HEX);
-	return false; // No device present?
-    }
+	// No way to check the device type :-(
 
-    // Add by Adrien van den Bossche <vandenbo@univ-tlse2.fr> for Teensy
-    // ARM M4 requires the below. else pin interrupt doesn't work properly.
-    // On all other platforms, its innocuous, belt and braces
-    pinMode(_interruptPin, INPUT); 
+	// Set sleep mode, so we can also set LORA mode:
+	spiWrite(RH_RF95_REG_01_OP_MODE, RH_RF95_MODE_SLEEP | RH_RF95_LONG_RANGE_MODE);
+	delay(10); // Wait for sleep mode to take over from say, CAD
+	// Check we are in sleep mode, with LORA set
+	if (spiRead(RH_RF95_REG_01_OP_MODE) != (RH_RF95_MODE_SLEEP | RH_RF95_LONG_RANGE_MODE))
+	{
+	//	Serial.println(spiRead(RH_RF95_REG_01_OP_MODE), HEX);
+		return false; // No device present?
+	}
 
-    // Set up interrupt handler
-    // Since there are a limited number of interrupt glue functions isr*() available,
-    // we can only support a limited number of devices simultaneously
-    // ON some devices, notably most Arduinos, the interrupt pin passed in is actuallt the 
-    // interrupt number. You have to figure out the interruptnumber-to-interruptpin mapping
-    // yourself based on knwledge of what Arduino board you are running on.
-    if (_myInterruptIndex == 0xff)
-    {
-	// First run, no interrupt allocated yet
-	if (_interruptCount <= RH_RF95_NUM_INTERRUPTS)
-	    _myInterruptIndex = _interruptCount++;
+	// Add by Adrien van den Bossche <vandenbo@univ-tlse2.fr> for Teensy
+	// ARM M4 requires the below. else pin interrupt doesn't work properly.
+	// On all other platforms, its innocuous, belt and braces
+	pinMode(_interruptPin, INPUT); 
+
+	// Set up interrupt handler
+	// Since there are a limited number of interrupt glue functions isr*() available,
+	// we can only support a limited number of devices simultaneously
+	// ON some devices, notably most Arduinos, the interrupt pin passed in is actuallt the 
+	// interrupt number. You have to figure out the interruptnumber-to-interruptpin mapping
+	// yourself based on knwledge of what Arduino board you are running on.
+	if (_myInterruptIndex == 0xff)
+	{
+		// First run, no interrupt allocated yet
+		if (_interruptCount <= RH_RF95_NUM_INTERRUPTS)
+			_myInterruptIndex = _interruptCount++;
+		else
+			return false; // Too many devices, not enough interrupt vectors
+	}
+	_deviceForInterrupt[_myInterruptIndex] = this;
+	if (_myInterruptIndex == 0)
+		attachInterrupt(interruptNumber, isr0, RISING);
+	else if (_myInterruptIndex == 1)
+		attachInterrupt(interruptNumber, isr1, RISING);
+	else if (_myInterruptIndex == 2)
+		attachInterrupt(interruptNumber, isr2, RISING);
 	else
-	    return false; // Too many devices, not enough interrupt vectors
-    }
-    _deviceForInterrupt[_myInterruptIndex] = this;
-    if (_myInterruptIndex == 0)
-	attachInterrupt(interruptNumber, isr0, RISING);
-    else if (_myInterruptIndex == 1)
-	attachInterrupt(interruptNumber, isr1, RISING);
-    else if (_myInterruptIndex == 2)
-	attachInterrupt(interruptNumber, isr2, RISING);
-    else
-	return false; // Too many devices, not enough interrupt vectors
+		return false; // Too many devices, not enough interrupt vectors
 
-    // Set up FIFO
-    // We configure so that we can use the entire 256 byte FIFO for either receive
-    // or transmit, but not both at the same time
-    spiWrite(RH_RF95_REG_0E_FIFO_TX_BASE_ADDR, 0);
-    spiWrite(RH_RF95_REG_0F_FIFO_RX_BASE_ADDR, 0);
+	// Set up FIFO
+	// We configure so that we can use the entire 256 byte FIFO for either receive
+	// or transmit, but not both at the same time
+	spiWrite(RH_RF95_REG_0E_FIFO_TX_BASE_ADDR, 0);
+	spiWrite(RH_RF95_REG_0F_FIFO_RX_BASE_ADDR, 0);
 
-    // Packet format is preamble + explicit-header + payload + crc
-    // Explicit Header Mode
-    // payload is TO + FROM + ID + FLAGS + message data
-    // RX mode is implmented with RXCONTINUOUS
-    // max message data length is 255 - 4 = 251 octets
+	// Packet format is preamble + explicit-header + payload + crc
+	// Explicit Header Mode
+	// payload is TO + FROM + ID + FLAGS + message data
+	// RX mode is implmented with RXCONTINUOUS
+	// max message data length is 255 - 4 = 251 octets
 
-    setModeIdle();
+	setModeIdle();
 
-    // Set up default configuration
-    // No Sync Words in LORA mode.
-    setModemConfig(Bw125Cr45Sf128); // Radio default
-//    setModemConfig(Bw125Cr48Sf4096); // slow and reliable?
-    setPreambleLength(8); // Default is 8
-    // An innocuous ISM frequency, same as RF22's
-    setFrequency(434.0);
-    // Lowish power
-    setTxPower(13);
+	// Set up default configuration
+	// No Sync Words in LORA mode.
+	setModemConfig(Bw125Cr45Sf128);			// Radio default
+	//    setModemConfig(Bw125Cr48Sf4096);	// slow and reliable?
+	setPreambleLength(8);					// Default is 8
+	// An innocuous ISM frequency, same as RF22's
+	setFrequency(434.0);
+	// Lowish power
+	setTxPower(13);
 
-    return true;
+	return true;
 }
 
 // C++ level interrupt handler for this instance
@@ -247,29 +247,29 @@ bool RH_RF95::recv(uint8_t* buf, uint8_t* len)
 
 bool RH_RF95::send(const uint8_t* data, uint8_t len)
 {
-    if (len > RH_RF95_MAX_MESSAGE_LEN)
-	return false;
+	if (len > RH_RF95_MAX_MESSAGE_LEN)
+		return false;
 
-    waitPacketSent(); // Make sure we dont interrupt an outgoing message
-    setModeIdle();
+	waitPacketSent(); // Make sure we dont interrupt an outgoing message
+	setModeIdle();
 
-    if (!waitCAD()) 
-	return false;  // Check channel activity
+	if (!waitCAD()) 
+		return false;  // Check channel activity
 
-    // Position at the beginning of the FIFO
-    spiWrite(RH_RF95_REG_0D_FIFO_ADDR_PTR, 0);
-    // The headers
-    spiWrite(RH_RF95_REG_00_FIFO, _txHeaderTo);
-    spiWrite(RH_RF95_REG_00_FIFO, _txHeaderFrom);
-    spiWrite(RH_RF95_REG_00_FIFO, _txHeaderId);
-    spiWrite(RH_RF95_REG_00_FIFO, _txHeaderFlags);
-    // The message data
-    spiBurstWrite(RH_RF95_REG_00_FIFO, data, len);
-    spiWrite(RH_RF95_REG_22_PAYLOAD_LENGTH, len + RH_RF95_HEADER_LEN);
+	// Position at the beginning of the FIFO
+	spiWrite(RH_RF95_REG_0D_FIFO_ADDR_PTR, 0);
+	// The headers
+	spiWrite(RH_RF95_REG_00_FIFO, _txHeaderTo);
+	spiWrite(RH_RF95_REG_00_FIFO, _txHeaderFrom);
+	spiWrite(RH_RF95_REG_00_FIFO, _txHeaderId);
+	spiWrite(RH_RF95_REG_00_FIFO, _txHeaderFlags);
+	// The message data
+	spiBurstWrite(RH_RF95_REG_00_FIFO, data, len);
+	spiWrite(RH_RF95_REG_22_PAYLOAD_LENGTH, len + RH_RF95_HEADER_LEN);
 
-    setModeTx(); // Start the transmitter
-    // when Tx is done, interruptHandler will fire and radio mode will return to STANDBY
-    return true;
+	setModeTx(); // Start the transmitter
+	// when Tx is done, interruptHandler will fire and radio mode will return to STANDBY
+	return true;
 }
 
 bool RH_RF95::printRegisters()
@@ -296,11 +296,11 @@ uint8_t RH_RF95::maxMessageLength()
 bool RH_RF95::setFrequency(float centre)
 {
     // Frf = FRF / FSTEP
-    uint32_t frf = (centre * 1000000.0) / RH_RF95_FSTEP;
+    uint32_t frf = (centre * 1000000.0f) / RH_RF95_FSTEP;
     spiWrite(RH_RF95_REG_06_FRF_MSB, (frf >> 16) & 0xff);
     spiWrite(RH_RF95_REG_07_FRF_MID, (frf >> 8) & 0xff);
     spiWrite(RH_RF95_REG_08_FRF_LSB, frf & 0xff);
-    _usingHFport = (centre >= 779.0);
+    _usingHFport = (centre >= 779.0f);
 
     return true;
 }
@@ -346,44 +346,44 @@ void RH_RF95::setModeTx()
 
 void RH_RF95::setTxPower(int8_t power, bool useRFO)
 {
-    // Sigh, different behaviours depending on whther the module use PA_BOOST or the RFO pin
-    // for the transmitter output
-    if (useRFO)
-    {
-	if (power > 14)
-	    power = 14;
-	if (power < -1)
-	    power = -1;
-	spiWrite(RH_RF95_REG_09_PA_CONFIG, RH_RF95_MAX_POWER | (power + 1));
-    }
-    else
-    {
-	if (power > 23)
-	    power = 23;
-	if (power < 5)
-	    power = 5;
-
-	// For RH_RF95_PA_DAC_ENABLE, manual says '+20dBm on PA_BOOST when OutputPower=0xf'
-	// RH_RF95_PA_DAC_ENABLE actually adds about 3dBm to all power levels. We will us it
-	// for 21, 22 and 23dBm
-	if (power > 20)
+	// Sigh, different behaviours depending on whther the module use PA_BOOST or the RFO pin
+	// for the transmitter output
+	if (useRFO)
 	{
-	    spiWrite(RH_RF95_REG_4D_PA_DAC, RH_RF95_PA_DAC_ENABLE);
-	    power -= 3;
+		if (power > 14)
+			power = 14;
+		if (power < -1)
+			power = -1;
+		spiWrite(RH_RF95_REG_09_PA_CONFIG, RH_RF95_MAX_POWER | (power + 1));
 	}
 	else
 	{
-	    spiWrite(RH_RF95_REG_4D_PA_DAC, RH_RF95_PA_DAC_DISABLE);
-	}
+		if (power > 23)
+			power = 23;
+		if (power < 5)
+			power = 5;
 
-	// RFM95/96/97/98 does not have RFO pins connected to anything. Only PA_BOOST
-	// pin is connected, so must use PA_BOOST
-	// Pout = 2 + OutputPower.
-	// The documentation is pretty confusing on this topic: PaSelect says the max power is 20dBm,
-	// but OutputPower claims it would be 17dBm.
-	// My measurements show 20dBm is correct
-	spiWrite(RH_RF95_REG_09_PA_CONFIG, RH_RF95_PA_SELECT | (power-5));
-    }
+		// For RH_RF95_PA_DAC_ENABLE, manual says '+20dBm on PA_BOOST when OutputPower=0xf'
+		// RH_RF95_PA_DAC_ENABLE actually adds about 3dBm to all power levels. We will us it
+		// for 21, 22 and 23dBm
+		if (power > 20)
+		{
+			spiWrite(RH_RF95_REG_4D_PA_DAC, RH_RF95_PA_DAC_ENABLE);
+			power -= 3;
+		}
+		else
+		{
+			spiWrite(RH_RF95_REG_4D_PA_DAC, RH_RF95_PA_DAC_DISABLE);
+		}
+
+		// RFM95/96/97/98 does not have RFO pins connected to anything. Only PA_BOOST
+		// pin is connected, so must use PA_BOOST
+		// Pout = 2 + OutputPower.
+		// The documentation is pretty confusing on this topic: PaSelect says the max power is 20dBm,
+		// but OutputPower claims it would be 17dBm.
+		// My measurements show 20dBm is correct
+		spiWrite(RH_RF95_REG_09_PA_CONFIG, RH_RF95_PA_SELECT | (power-5));
+	}
 }
 
 // Sets registers from a canned modem configuration structure
@@ -457,7 +457,7 @@ int RH_RF95::frequencyError()
     float bw_tab[] = {7.8, 10.4, 15.6, 20.8, 31.25, 41.7, 62.5, 125, 250, 500};
     uint8_t bwindex = spiRead(RH_RF95_REG_1D_MODEM_CONFIG1) >> 4;
     if (bwindex < (sizeof(bw_tab) / sizeof(float)))
-	error = (float)freqerror * bw_tab[bwindex] * ((float)(1L << 24) / (float)RH_RF95_FXOSC / 500.0);
+	error = (float)freqerror * bw_tab[bwindex] * ((float)(1L << 24) / (float)RH_RF95_FXOSC / 500.0f);
     // else not defined
 
     return error;

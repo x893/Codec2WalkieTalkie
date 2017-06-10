@@ -7,21 +7,24 @@
 #include <stdint.h>
 extern "C"
 {
-	#include <gdb_stdio.h>
+	#include "gdb_stdio.h"
 }
-#include <codec2_fifo.h>
-#include <codec2.h>
-#include <wirish.h>
+#include "codec2_fifo.h"
+#include "codec2.h"
+#include "wirish.h"
 
 // Define this to enable internal testing from microphone direct to speakers
 // No radio required
-//#define LOOPBACK_TEST 1
+// #define LOOPBACK_TEST 1
 
 // Define this to build using RF22 radio for comms
-#define USE_DRIVER_RF22		1
+// #define USE_DRIVER_RF22		1
+
+// Define this to build using RF95 radio for comms
+// #define USE_DRIVER_RF95		1
 
 // Or, define this to build using Serial2 for comms
-//#define USE_DRIVER_SERIAL	1
+// #define USE_DRIVER_SERIAL	1
 
 // Microphone uses SPI2:
 // PB10 is clock out to the mic
@@ -72,6 +75,15 @@ struct CODEC2 *c2;
 	// PA2 is input interrupt from NIRQ (if used)
 	#include <RH_RF22.h>
 	RH_RF22 driver;
+#elif defined(USE_DRIVER_RF95)
+	// Radio uses SPI1:
+	// PA5 is SCK
+	// PA6 is MISO (SDO from radio)
+	// PA7 is MOSI (SDI to radio)
+	// PA10 is used for chip select NSEL
+	// PA2 is input interrupt from NIRQ (if used)
+	#include <RH_RF95.h>
+	RH_RF95 driver;
 #elif defined(USE_DRIVER_SERIAL)
 	// Build using Serial port for comms
 	// Serial port Serial2
@@ -122,7 +134,13 @@ void setup()
 //	driver.setModemConfig(RH_RF22::GFSK_Rb19_2Fd9_6); // Choppy
 	// Could also configure Radio frequency here
 	// Could configure RadioHead driver addresses, etc here for private(ish) networks etc
-	
+
+	#elif defined(USE_DRIVER_RF95)
+
+	driver.setModemConfig(RH_RF95::Bw125Cr45Sf128);
+	driver.setFrequency(434.0);
+	driver.setTxPower(23);
+
 	#elif defined(USE_DRIVER_SERIAL)
 
 	Serial2.begin(9600);
